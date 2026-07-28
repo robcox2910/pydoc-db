@@ -105,3 +105,72 @@ class TestCollectionIndex:
         """Verify dropping a non-existent index returns False."""
         col = Collection("test")
         assert col.drop_index("nonexistent") is False
+
+
+class TestIndexBackedFind:
+    """Test that find() actually uses an equality index for lookups."""
+
+    def test_indexed_equality_find(self) -> None:
+        """Verify an equality find on an indexed field returns the right docs."""
+        col = Collection("test")
+        col.insert_many(
+            [
+                {"name": "Alice", "city": "Paris"},
+                {"name": "Bob", "city": "London"},
+                {"name": "Carol", "city": "Paris"},
+            ]
+        )
+        col.create_index("city")
+        results = col.find({"city": "Paris"})
+        assert {r["name"] for r in results} == {"Alice", "Carol"}
+
+    def test_indexed_eq_operator_find(self) -> None:
+        """Verify {"$eq": value} on an indexed field is index-backed and correct."""
+        col = Collection("test")
+        col.insert_one({"name": "Alice", "city": "Paris"})
+        col.insert_one({"name": "Bob", "city": "London"})
+        col.create_index("city")
+        results = col.find({"city": {"$eq": "London"}})
+        assert len(results) == 1
+        assert results[0]["name"] == "Bob"
+
+    def test_index_find_reflects_updates(self) -> None:
+        """Verify an index-backed find sees changes made after indexing."""
+        col = Collection("test")
+        col.insert_one({"_id": "1", "name": "Alice", "city": "Paris"})
+        col.create_index("city")
+        col.update_one({"_id": "1"}, {"city": "Rome"})
+        assert col.find({"city": "Paris"}) == []
+        assert col.find_one({"city": "Rome"})["name"] == "Alice"  # type: ignore[index]
+
+    def test_indexed_field_range_query_falls_back(self) -> None:
+        """Verify a non-equality operator on an indexed field still scans correctly."""
+        col = Collection("test")
+        col.insert_one({"name": "Alice", "age": 14})
+        col.insert_one({"name": "Bob", "age": 40})
+        col.create_index("age")
+        # $gt can't use the equality index, so it falls back to a full scan.
+        results = col.find({"age": {"$gt": 18}})
+        assert len(results) == 1
+        assert results[0]["name"] == "Bob"
+
+    def test_indexed_field_none_query_falls_back(self) -> None:
+        """Verify querying an indexed field for None falls back to a full scan."""
+        col = Collection("test")
+        col.insert_one({"name": "Alice", "city": None})
+        col.insert_one({"name": "Bob", "city": "Paris"})
+        col.create_index("city")
+        # None isn't stored in the index, so this must not silently miss Alice.
+        results = col.find({"city": None})
+        assert len(results) == 1
+        assert results[0]["name"] == "Alice"
+
+    def test_index_candidates_never_lose_matches(self) -> None:
+        """Verify a compound query with an indexed field still finds all matches."""
+        col = Collection("test")
+        col.insert_one({"name": "Alice", "city": "Paris", "age": 14})
+        col.insert_one({"name": "Bob", "city": "Paris", "age": 40})
+        col.create_index("city")
+        results = col.find({"city": "Paris", "age": {"$lt": 18}})
+        assert len(results) == 1
+        assert results[0]["name"] == "Alice"

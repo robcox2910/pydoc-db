@@ -21,10 +21,8 @@ from pydocdb.aggregation import aggregate
 from pydocdb.collection import Collection
 from pydocdb.document import Document, DocumentData
 from pydocdb.errors import (
-    CollectionExistsError,
     DocumentNotFoundError,
     DuplicateKeyError,
-    InvalidFieldError,
     InvalidPipelineError,
     InvalidQueryError,
     PersistenceError,
@@ -35,13 +33,11 @@ from pydocdb.persistence import load_collection, save_collection
 
 __all__: list[str] = [
     "Collection",
-    "CollectionExistsError",
     "Document",
     "DocumentData",
     "DocumentNotFoundError",
     "DuplicateKeyError",
     "Index",
-    "InvalidFieldError",
     "InvalidPipelineError",
     "InvalidQueryError",
     "PersistenceError",

@@ -41,22 +41,6 @@ class InvalidQueryError(PyDocDBError):
     """
 
 
-class InvalidFieldError(PyDocDBError):
-    """Raise when a field path is invalid or cannot be resolved.
-
-    Like trying to look inside a folder that doesn't exist -- you can't
-    open drawer 5 if the cabinet only has 4 drawers.
-    """
-
-
-class CollectionExistsError(PyDocDBError):
-    """Raise when trying to create a collection that already exists.
-
-    Like trying to label two folders with the same name in the same
-    filing cabinet -- each folder needs a unique name.
-    """
-
-
 class InvalidPipelineError(PyDocDBError):
     """Raise when an aggregation pipeline stage is invalid.
 

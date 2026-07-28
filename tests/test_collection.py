@@ -50,6 +50,34 @@ class TestInsert:
         assert len(docs) == EXPECTED_THREE
         assert len(col) == EXPECTED_THREE
 
+    def test_insert_many_is_atomic_on_duplicate(self) -> None:
+        """Verify a mid-batch duplicate _id inserts nothing (all-or-nothing)."""
+        col = Collection("test")
+        col.insert_one({"_id": "x", "name": "Existing"})
+        with pytest.raises(DuplicateKeyError):
+            col.insert_many(
+                [
+                    {"name": "Alice"},
+                    {"_id": "x", "name": "Clash"},  # collides with existing
+                    {"name": "Charlie"},
+                ]
+            )
+        # Nothing from the batch was committed -- only the original doc remains.
+        assert len(col) == 1
+        assert col.find_by_id("x")["name"] == "Existing"
+
+    def test_insert_many_rejects_duplicate_within_batch(self) -> None:
+        """Verify two docs sharing an _id in one batch insert nothing."""
+        col = Collection("test")
+        with pytest.raises(DuplicateKeyError):
+            col.insert_many(
+                [
+                    {"_id": "dup", "name": "Alice"},
+                    {"_id": "dup", "name": "Bob"},
+                ]
+            )
+        assert len(col) == 0
+
 
 class TestFind:
     """Test finding documents in a collection."""
@@ -121,6 +149,35 @@ class TestFind:
         assert "name" in result
         assert "age" not in result
 
+    def test_find_mixed_types_does_not_abort(self) -> None:
+        """Verify a range query survives documents with incomparable field types."""
+        col = Collection("test")
+        col.insert_one({"name": "Alice", "age": AGE_ALICE})
+        col.insert_one({"name": "Bob", "age": "teenager"})  # incomparable type
+        col.insert_one({"name": "Charlie", "age": AGE_CHARLIE})
+        # Without the TypeError guard this whole find would crash.
+        results = col.find({"age": {"$gt": AGE_THRESHOLD}})
+        names = {r["name"] for r in results}
+        assert names == {"Alice", "Charlie"}
+
+    def test_find_exists_matches_present_null(self) -> None:
+        """Verify $exists: True matches a field explicitly set to None."""
+        col = Collection("test")
+        col.insert_one({"name": "Alice", "nickname": None})
+        col.insert_one({"name": "Bob"})
+        results = col.find({"nickname": {"$exists": True}})
+        assert len(results) == 1
+        assert results[0]["name"] == "Alice"
+
+    def test_find_not_exists_skips_present_null(self) -> None:
+        """Verify $exists: False does not match a field that is present but None."""
+        col = Collection("test")
+        col.insert_one({"name": "Alice", "nickname": None})
+        col.insert_one({"name": "Bob"})
+        results = col.find({"nickname": {"$exists": False}})
+        assert len(results) == 1
+        assert results[0]["name"] == "Bob"
+
 
 class TestUpdate:
     """Test updating documents."""
@@ -148,6 +205,29 @@ class TestUpdate:
         col.insert_one({"team": "B", "score": 0})
         count = col.update_many({"team": "A"}, {"score": 1})
         assert count == EXPECTED_TWO
+
+    def test_update_one_ignores_id_change(self) -> None:
+        """Verify update_one refuses to change _id, keeping the document findable."""
+        col = Collection("test")
+        doc = col.insert_one({"_id": "orig", "name": "Alice"})
+        col.update_one({"name": "Alice"}, {"_id": "hacked", "age": UPDATE_AGE})
+        # _id is unchanged and the document is still findable by its real id.
+        assert doc.id == "orig"
+        result = col.find_by_id("orig")
+        assert result["age"] == UPDATE_AGE
+        with pytest.raises(DocumentNotFoundError):
+            col.find_by_id("hacked")
+
+    def test_update_many_ignores_id_change(self) -> None:
+        """Verify update_many does not desync documents by rewriting _id."""
+        col = Collection("test")
+        col.insert_one({"_id": "a", "team": "A"})
+        col.insert_one({"_id": "b", "team": "A"})
+        col.update_many({"team": "A"}, {"_id": "clash", "score": 1})
+        # Both documents keep their original ids (no collision, no lost cards).
+        assert len(col) == EXPECTED_TWO
+        assert col.find_by_id("a")["score"] == 1
+        assert col.find_by_id("b")["score"] == 1
 
 
 class TestDelete:

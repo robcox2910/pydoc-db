@@ -102,6 +102,22 @@ class TestComparisonOperators:
         """Verify $lte returns False for None values."""
         assert op_lte(None, VALUE_TEN) is False
 
+    def test_gt_incomparable_types(self) -> None:
+        """Verify $gt returns False (not TypeError) for incomparable types."""
+        assert op_gt("hello", VALUE_TEN) is False
+
+    def test_gte_incomparable_types(self) -> None:
+        """Verify $gte returns False (not TypeError) for incomparable types."""
+        assert op_gte("hello", VALUE_TEN) is False
+
+    def test_lt_incomparable_types(self) -> None:
+        """Verify $lt returns False (not TypeError) for incomparable types."""
+        assert op_lt("hello", VALUE_TEN) is False
+
+    def test_lte_incomparable_types(self) -> None:
+        """Verify $lte returns False (not TypeError) for incomparable types."""
+        assert op_lte("hello", VALUE_TEN) is False
+
 
 class TestInOperator:
     """Test $in operator."""

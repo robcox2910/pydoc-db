@@ -63,7 +63,12 @@ def op_gt(field_value: Any, query_value: Any) -> bool:
     """
     if field_value is None:
         return False
-    return field_value > query_value  # type: ignore[no-any-return]
+    try:
+        return field_value > query_value  # type: ignore[no-any-return]
+    except TypeError:
+        # Comparing apples to oranges (e.g. a number to a word) just
+        # doesn't match -- like MongoDB, we skip it instead of crashing.
+        return False
 
 
 def op_gte(field_value: Any, query_value: Any) -> bool:
@@ -81,7 +86,10 @@ def op_gte(field_value: Any, query_value: Any) -> bool:
     """
     if field_value is None:
         return False
-    return field_value >= query_value  # type: ignore[no-any-return]
+    try:
+        return field_value >= query_value  # type: ignore[no-any-return]
+    except TypeError:
+        return False
 
 
 def op_lt(field_value: Any, query_value: Any) -> bool:
@@ -99,7 +107,10 @@ def op_lt(field_value: Any, query_value: Any) -> bool:
     """
     if field_value is None:
         return False
-    return field_value < query_value  # type: ignore[no-any-return]
+    try:
+        return field_value < query_value  # type: ignore[no-any-return]
+    except TypeError:
+        return False
 
 
 def op_lte(field_value: Any, query_value: Any) -> bool:
@@ -117,7 +128,10 @@ def op_lte(field_value: Any, query_value: Any) -> bool:
     """
     if field_value is None:
         return False
-    return field_value <= query_value  # type: ignore[no-any-return]
+    try:
+        return field_value <= query_value  # type: ignore[no-any-return]
+    except TypeError:
+        return False
 
 
 def op_in(field_value: Any, query_value: Any) -> bool:
@@ -142,21 +156,22 @@ def op_in(field_value: Any, query_value: Any) -> bool:
     return field_value in query_value
 
 
-def op_exists(field_value: Any, query_value: Any) -> bool:
+def op_exists(field_present: Any, query_value: Any) -> bool:
     """Check whether a field exists (or doesn't exist) in a document.
 
-    Like asking: "Does this index card even HAVE a 'phone number' written on it?"
+    Like asking: "Does this index card even HAVE a 'phone number' line on it?"
+    A line that's been left blank still counts as being there -- what matters
+    is whether the field is present, not what's written in it.
 
     Args:
-        field_value: The actual value from the document (None if missing).
+        field_present: Whether the field is present in the document (True/False).
         query_value: True to check if the field exists, False to check if it doesn't.
 
     Returns:
         True if the existence check passes.
 
     """
-    exists = field_value is not None
-    return exists == bool(query_value)
+    return bool(field_present) == bool(query_value)
 
 
 # Registry mapping operator names to their functions

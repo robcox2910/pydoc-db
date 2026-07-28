@@ -13,8 +13,7 @@ straight to the right ones.
 
 from typing import Any
 
-from pydocdb.document import Document
-from pydocdb.projection import extract_field
+from pydocdb.document import Document, extract_field
 
 
 class Index:
@@ -54,7 +53,7 @@ class Index:
             return
 
         # Convert unhashable types to something hashable
-        key = _make_hashable(value)
+        key = make_hashable(value)
         if key not in self._entries:
             self._entries[key] = set()
         self._entries[key].add(doc.id)
@@ -70,7 +69,7 @@ class Index:
         if value is None:
             return
 
-        key = _make_hashable(value)
+        key = make_hashable(value)
         if key in self._entries:
             self._entries[key].discard(doc.id)
             if not self._entries[key]:
@@ -86,7 +85,7 @@ class Index:
             A set of document IDs that match.
 
         """
-        key = _make_hashable(value)
+        key = make_hashable(value)
         if key in self._entries:
             return set(self._entries[key])
         return set()
@@ -105,7 +104,7 @@ class Index:
         return f"Index(field={self.field!r}, unique_values={len(self)}, documents={count})"
 
 
-def _make_hashable(value: Any) -> Any:
+def make_hashable(value: Any) -> Any:
     """Convert a value to something that can be used as a dict key.
 
     Lists and dicts aren't hashable in Python, so we convert them
