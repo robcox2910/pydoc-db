@@ -17,6 +17,30 @@ from typing import Any
 DocumentData = dict[str, Any]
 
 
+def extract_field(data: Any, path: str) -> Any:
+    """Extract a nested field value using dot notation.
+
+    Like following directions: "Go to the address, then look for the city."
+    The path "address.city" means: look inside "address", then get "city".
+
+    Args:
+        data: The data to search through (usually a dict).
+        path: A dot-separated path like "address.city".
+
+    Returns:
+        The value at the path, or None if not found.
+
+    """
+    parts = path.split(".")
+    current: Any = data
+    for part in parts:
+        if isinstance(current, dict):
+            current = current.get(part)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        else:
+            return None
+    return current  # pyright: ignore[reportUnknownVariableType]
+
+
 class Document:
     """A single document in the store, like an index card with a unique ID.
 
@@ -50,6 +74,9 @@ class Document:
     def id(self) -> str:
         """Return the document's unique identifier.
 
+        Like reading the barcode sticker on a library book -- no two documents
+        ever share the same one.
+
         Returns:
             The ``_id`` field as a string.
 
@@ -58,6 +85,9 @@ class Document:
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a field's value, returning a default if the field doesn't exist.
+
+        Like reading one line off an index card, and just shrugging with a
+        fallback answer if that line was never filled in.
 
         Args:
             key: The field name to look up.
@@ -82,17 +112,13 @@ class Document:
             The value at the path, or None if any part of the path is missing.
 
         """
-        parts = path.split(".")
-        current: Any = self.data
-        for part in parts:
-            if isinstance(current, dict):
-                current = current.get(part)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-            else:
-                return None
-        return current  # pyright: ignore[reportUnknownVariableType]
+        return extract_field(self.data, path)
 
     def to_dict(self) -> DocumentData:
         """Return a copy of the document's data as a plain dictionary.
+
+        Like photocopying an index card so you can scribble on the copy without
+        changing the original.
 
         Returns:
             A new dictionary with all the document's fields.

@@ -29,6 +29,17 @@ students.create_index("name")
 - Indexes make reads faster but use extra memory
 - You can index nested fields too: `students.create_index("address.city")`
 
+## What Speeds Up (and What Doesn't)
+
+`find()` and `find_one()` use an index only for **equality** lookups on an
+indexed field, such as `students.find({"name": "Alice"})` or the equivalent
+`{"name": {"$eq": "Alice"}}`. That's when we can jump straight to the matching
+documents instead of scanning them all.
+
+Range queries (`$gt`, `$lt`, ...), `$in`, `$exists`, and matches on
+un-indexed fields still fall back to a full scan. Making those use an index too
+is a great exercise to try yourself!
+
 ## Managing Indexes
 
 ```python

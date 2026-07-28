@@ -12,9 +12,9 @@ You can either:
 The ``_id`` field is always included by default (unless you explicitly exclude it).
 """
 
-from typing import Any
+from pydocdb.document import DocumentData, extract_field
 
-from pydocdb.document import DocumentData
+__all__ = ["EXCLUDE", "INCLUDE", "apply_projection", "extract_field"]
 
 # Projection values: 1 means include, 0 means exclude
 INCLUDE: int = 1
@@ -99,27 +99,3 @@ def _apply_exclusion(
             del result[field]
 
     return result
-
-
-def extract_field(data: Any, path: str) -> Any:
-    """Extract a nested field value using dot notation.
-
-    Like following directions: "Go to the address, then look for the city."
-    The path "address.city" means: look inside "address", then get "city".
-
-    Args:
-        data: The data to search through (usually a dict).
-        path: A dot-separated path like "address.city".
-
-    Returns:
-        The value at the path, or None if not found.
-
-    """
-    parts = path.split(".")
-    current: Any = data
-    for part in parts:
-        if isinstance(current, dict):
-            current = current.get(part)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        else:
-            return None
-    return current  # pyright: ignore[reportUnknownVariableType]

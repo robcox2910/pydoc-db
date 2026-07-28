@@ -70,7 +70,10 @@ class Collection:
     def insert_many(self, data_list: list[DocumentData]) -> list[Document]:
         """Insert multiple documents at once.
 
-        Like filing a whole stack of index cards at once.
+        Like filing a whole stack of index cards at once. This is all-or-nothing:
+        if any card would clash with an existing ``_id`` (or another card in the
+        same stack), nothing is filed at all, so you never end up with a
+        half-inserted batch.
 
         Args:
             data_list: A list of dictionaries, each becoming a document.
@@ -78,8 +81,24 @@ class Collection:
         Returns:
             A list of the inserted Documents.
 
+        Raises:
+            DuplicateKeyError: If any document's _id already exists or is
+                repeated within the batch (no documents are inserted).
+
         """
-        return [self.insert_one(data) for data in data_list]
+        # Build and validate everything up front so the whole batch is atomic.
+        docs = [Document(data) for data in data_list]
+        seen: set[str] = set()
+        for doc in docs:
+            if doc.id in self._documents or doc.id in seen:
+                msg = f"Document with _id '{doc.id}' already exists"
+                raise DuplicateKeyError(msg)
+            seen.add(doc.id)
+
+        for doc in docs:
+            self._documents[doc.id] = doc
+            self._index_document(doc)
+        return docs
 
     def find_one(
         self,
@@ -99,7 +118,7 @@ class Collection:
 
         """
         query = query or {}
-        for doc in self._documents.values():
+        for doc in self._candidate_documents(query):
             if matches(doc, query):
                 result = doc.to_dict()
                 if projection:
@@ -126,13 +145,48 @@ class Collection:
         """
         query = query or {}
         results: list[DocumentData] = []
-        for doc in self._documents.values():
+        for doc in self._candidate_documents(query):
             if matches(doc, query):
                 result = doc.to_dict()
                 if projection:
                     result = apply_projection(result, projection)
                 results.append(result)
         return results
+
+    def _candidate_documents(self, query: dict[str, Any]) -> list[Document]:
+        """Narrow down which documents to check, using an index when possible.
+
+        This is the payoff of building an index: instead of walking past EVERY
+        index card (a "full scan"), an equality query on an indexed field jumps
+        straight to the matching cards, like flipping to a page number from the
+        index at the back of a book. If no index helps, we fall back to
+        scanning everything. Every candidate is still re-checked by ``matches``
+        so the full query stays correct.
+
+        Args:
+            query: The query about to be evaluated.
+
+        Returns:
+            The documents worth checking against the query.
+
+        """
+        for field, condition in query.items():
+            index = self._indexes.get(field)
+            if index is None:
+                continue
+            # Pull the equality value out of {"field": value} or {"field": {"$eq": value}}.
+            value: Any = condition
+            if isinstance(condition, dict):
+                if set(condition) != {"$eq"}:  # pyright: ignore[reportUnknownArgumentType]
+                    continue
+                value = condition["$eq"]  # pyright: ignore[reportUnknownVariableType]
+            # None isn't stored in the index, so let the full scan handle it.
+            if value is None:
+                continue
+            return [
+                self._documents[doc_id] for doc_id in index.find(value) if doc_id in self._documents
+            ]
+        return list(self._documents.values())
 
     def find_by_id(self, doc_id: str) -> DocumentData:
         """Find a document by its ``_id``.
@@ -162,7 +216,8 @@ class Collection:
     ) -> bool:
         """Update the first document matching the query.
 
-        Like erasing part of an index card and writing new info.
+        Like erasing part of an index card and writing new info. The card's
+        barcode (``_id``) is permanent, so any ``_id`` in the update is ignored.
 
         Args:
             query: Conditions to find the document to update.
@@ -172,10 +227,11 @@ class Collection:
             True if a document was updated, False if none matched.
 
         """
+        changes = _without_id(update)
         for doc in self._documents.values():
             if matches(doc, query):
                 self._unindex_document(doc)
-                doc.data.update(update)
+                doc.data.update(changes)
                 self._index_document(doc)
                 return True
         return False
@@ -187,6 +243,10 @@ class Collection:
     ) -> int:
         """Update all documents matching the query.
 
+        Like going through a whole drawer of index cards and rewriting the same
+        detail on every one that matches. Each card keeps its barcode
+        (``_id``), so any ``_id`` in the update is ignored.
+
         Args:
             query: Conditions to find the documents to update.
             update: A dictionary of fields to change or add.
@@ -195,11 +255,12 @@ class Collection:
             The number of documents updated.
 
         """
+        changes = _without_id(update)
         count = 0
         for doc in self._documents.values():
             if matches(doc, query):
                 self._unindex_document(doc)
-                doc.data.update(update)
+                doc.data.update(changes)
                 self._index_document(doc)
                 count += 1
         return count
@@ -226,6 +287,8 @@ class Collection:
     def delete_many(self, query: dict[str, Any]) -> int:
         """Delete all documents matching the query.
 
+        Like flipping through the folder and shredding every card that matches.
+
         Args:
             query: Conditions to find documents to delete.
 
@@ -241,6 +304,8 @@ class Collection:
 
     def count(self, query: dict[str, Any] | None = None) -> int:
         """Count documents matching the query.
+
+        Like tallying how many index cards are in the folder without reading them.
 
         Args:
             query: Conditions to match (None means "count all").
@@ -275,6 +340,9 @@ class Collection:
     def drop_index(self, field: str) -> bool:
         """Remove an index on a field.
 
+        Like tearing the index pages out of the back of a textbook -- the
+        content is still there, you just have to search it the slow way now.
+
         Args:
             field: The field whose index to remove.
 
@@ -290,6 +358,9 @@ class Collection:
     def list_indexes(self) -> list[str]:
         """List all indexed fields.
 
+        Like glancing at the back of a textbook to see which topics have a
+        shortcut in the index.
+
         Returns:
             A list of field names that have indexes.
 
@@ -299,6 +370,9 @@ class Collection:
     def to_list(self) -> list[DocumentData]:
         """Export all documents as a list of dictionaries.
 
+        Like laying every index card out on the table in a row so you can see
+        them all at once.
+
         Returns:
             A list of all document data dicts.
 
@@ -306,7 +380,10 @@ class Collection:
         return [doc.to_dict() for doc in self._documents.values()]
 
     def clear(self) -> None:
-        """Remove all documents and reset indexes."""
+        """Empty the whole folder -- remove all documents and reset indexes.
+
+        Like tipping every index card out of the folder into the recycling bin.
+        """
         self._documents.clear()
         for index in self._indexes.values():
             index.clear()
@@ -338,3 +415,20 @@ class Collection:
     def __repr__(self) -> str:
         """Return a developer-friendly string representation."""
         return f"Collection(name={self.name!r}, documents={len(self)})"
+
+
+def _without_id(update: DocumentData) -> DocumentData:
+    """Return a copy of an update payload with any ``_id`` field removed.
+
+    A document's ``_id`` is its permanent barcode -- changing it would break
+    the link between the document and where it's filed, so we never let an
+    update touch it.
+
+    Args:
+        update: The requested update fields.
+
+    Returns:
+        The same fields minus ``_id``.
+
+    """
+    return {key: value for key, value in update.items() if key != "_id"}

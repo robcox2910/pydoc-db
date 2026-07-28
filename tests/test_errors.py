@@ -3,10 +3,8 @@
 import pytest
 
 from pydocdb.errors import (
-    CollectionExistsError,
     DocumentNotFoundError,
     DuplicateKeyError,
-    InvalidFieldError,
     InvalidPipelineError,
     InvalidQueryError,
     PersistenceError,
@@ -23,8 +21,6 @@ class TestExceptionHierarchy:
             DocumentNotFoundError,
             DuplicateKeyError,
             InvalidQueryError,
-            InvalidFieldError,
-            CollectionExistsError,
             InvalidPipelineError,
             PersistenceError,
         ],
@@ -39,8 +35,6 @@ class TestExceptionHierarchy:
             DocumentNotFoundError,
             DuplicateKeyError,
             InvalidQueryError,
-            InvalidFieldError,
-            CollectionExistsError,
             InvalidPipelineError,
             PersistenceError,
         ],

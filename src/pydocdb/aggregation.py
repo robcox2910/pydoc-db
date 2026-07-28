@@ -14,9 +14,9 @@ output of the previous stage and transforms it.
 
 from typing import Any
 
-from pydocdb.document import Document, DocumentData
+from pydocdb.document import Document, DocumentData, extract_field
 from pydocdb.errors import InvalidPipelineError
-from pydocdb.projection import extract_field
+from pydocdb.indexing import make_hashable
 from pydocdb.query import matches
 
 
@@ -99,6 +99,12 @@ def _stage_group(
     - ``$min``: Find the smallest value
     - ``$max``: Find the largest value
 
+    Note:
+        Group keys must be hashable to sort documents into piles, so a list
+        key comes back as a tuple and a dict key as a tuple of pairs in each
+        result's ``_id``. Grouping by simple values (strings, numbers) is the
+        common case and is unaffected.
+
     Args:
         documents: Input documents.
         group_spec: A dict with ``_id`` (group key) and accumulator fields.
@@ -127,7 +133,7 @@ def _stage_group(
             key = group_key
 
         # Make the key hashable
-        hashable_key = _make_hashable_key(key)
+        hashable_key = make_hashable(key)
         if hashable_key not in groups:
             groups[hashable_key] = []
         groups[hashable_key].append(doc)
@@ -369,20 +375,3 @@ def _stage_count(
         msg = "$count requires a string field name"
         raise InvalidPipelineError(msg)
     return [{field_name: len(documents)}]
-
-
-def _make_hashable_key(value: Any) -> Any:
-    """Convert a value to something hashable for use as a group key.
-
-    Args:
-        value: Any value.
-
-    Returns:
-        A hashable version of the value.
-
-    """
-    if isinstance(value, list):
-        return tuple(value)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
-    if isinstance(value, dict):
-        return tuple(sorted(value.items()))  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
-    return value

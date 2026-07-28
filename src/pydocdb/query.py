@@ -84,8 +84,38 @@ def _match_field(doc: Document, field: str, condition: Any) -> bool:
         if op not in OPERATORS:
             msg = f"Unknown query operator: {op}"
             raise InvalidQueryError(msg)
+        if op == "$exists":
+            # $exists cares about PRESENCE, not value -- a field set to None
+            # is still present, so we walk the path to check membership.
+            if not OPERATORS[op](_field_exists(doc, field), value):
+                return False
+            continue
         operator_fn = OPERATORS[op]
         if not operator_fn(field_value, value):
+            return False
+    return True
+
+
+def _field_exists(doc: Document, field: str) -> bool:
+    """Check whether a field path is present in a document.
+
+    Like running your finger down an index card to see if a "phone number"
+    line was ever written -- even a blank line counts as present.
+
+    Args:
+        doc: The document to check.
+        field: The field name (supports dot notation for nested fields).
+
+    Returns:
+        True if every part of the path exists (even if its value is None).
+
+    """
+    parts = field.split(".")
+    current: Any = doc.data
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]  # pyright: ignore[reportUnknownVariableType]
+        else:
             return False
     return True
 

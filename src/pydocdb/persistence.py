@@ -27,6 +27,12 @@ def save_collection(collection: Collection, file_path: str | Path) -> None:
     on a shelf. The box (file) keeps everything safe even when the
     program isn't running.
 
+    Note:
+        JSON can only store text, numbers, lists, and dicts. Values it doesn't
+        understand (like a ``datetime``) are written out as their text form, so
+        after a save-and-load round trip they come back as strings, not their
+        original type.
+
     Args:
         collection: The collection to save.
         file_path: Where to save the file (e.g., "students.json").
