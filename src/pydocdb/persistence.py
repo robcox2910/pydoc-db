@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydocdb.atomic import atomic_write_text
 from pydocdb.collection import Collection
 from pydocdb.document import DocumentData
 from pydocdb.errors import PersistenceError
@@ -50,7 +51,7 @@ def save_collection(collection: Collection, file_path: str | Path) -> None:
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+        atomic_write_text(path, json.dumps(data, indent=2, default=str))
     except OSError as exc:
         msg = f"Failed to save collection to '{path}': {exc}"
         raise PersistenceError(msg) from exc

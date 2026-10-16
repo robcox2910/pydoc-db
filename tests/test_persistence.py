@@ -1,5 +1,6 @@
 """Tests for persistence (save/load)."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -74,3 +75,36 @@ class TestSaveAndLoad:
         file_path.write_text("not valid json {{{", encoding="utf-8")
         with pytest.raises(PersistenceError, match="Failed to load"):
             load_collection(file_path)
+
+
+class _SimulatedCrashError(OSError):
+    """Stands in for the power going out part-way through a save."""
+
+
+def test_interrupted_save_keeps_the_previous_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a crash mid-save used to leave a truncated, unloadable file."""
+    col = Collection("c")
+    col.insert_one({"_id": "1", "v": "old"})
+    path = tmp_path / "data.json"
+    save_collection(col, path)
+    before = path.read_bytes()
+    col.insert_one({"_id": "2", "v": "new"})
+
+    def write_half_then_crash(self: Path, data: str, *_args: object, **_kwargs: object) -> int:
+        with self.open("w", encoding="utf-8") as handle:
+            handle.write(data[: len(data) // 2])
+        raise _SimulatedCrashError
+
+    def crash(*_args: object) -> None:
+        raise _SimulatedCrashError
+
+    monkeypatch.setattr(Path, "write_text", write_half_then_crash)
+    monkeypatch.setattr(os, "replace", crash)
+    with pytest.raises((OSError, PersistenceError)):
+        save_collection(col, path)
+    monkeypatch.undo()
+    assert path.read_bytes() == before
+    load_collection(path)
+    assert [p.name for p in tmp_path.iterdir()] == ["data.json"]
