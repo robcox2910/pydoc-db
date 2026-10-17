@@ -13,7 +13,7 @@ would disappear when your program stops running.
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydocdb.atomic import atomic_write_text
 from pydocdb.collection import Collection
@@ -77,20 +77,37 @@ def load_collection(file_path: str | Path) -> Collection:
 
     try:
         text = path.read_text(encoding="utf-8")
-        data: dict[str, Any] = json.loads(text)
+        data: Any = json.loads(text)
     except (OSError, json.JSONDecodeError) as exc:
         msg = f"Failed to load collection from '{path}': {exc}"
         raise PersistenceError(msg) from exc
 
-    name: str = data.get("name", "unnamed")
-    documents: list[DocumentData] = data.get("documents", [])
-    index_fields: list[str] = data.get("indexes", [])
+    # Refuse anything that isn't a saved collection, rather than loading it
+    # as an empty one that the next save would write over.
+    if not isinstance(data, dict):
+        msg = f"'{path}' is not a saved collection"
+        raise PersistenceError(msg)
+    fields = cast("dict[str, object]", data)
+    name = fields.get("name")
+    documents = fields.get("documents")
+    index_fields = fields.get("indexes", [])
+    if (
+        not isinstance(name, str)
+        or not isinstance(documents, list)
+        or not all(isinstance(doc, dict) for doc in cast("list[object]", documents))
+        or not isinstance(index_fields, list)
+    ):
+        msg = f"'{path}' is not a saved collection"
+        raise PersistenceError(msg)
 
-    collection = Collection(str(name))
-    for doc_data in documents:
-        collection.insert_one(doc_data)
-
-    for field in index_fields:
-        collection.create_index(str(field))
+    try:
+        collection = Collection(name)
+        for doc_data in cast("list[DocumentData]", documents):
+            collection.insert_one(doc_data)
+        for field in cast("list[object]", index_fields):
+            collection.create_index(str(field))
+    except (KeyError, TypeError, ValueError) as exc:
+        msg = f"'{path}' is not a valid saved collection: {exc}"
+        raise PersistenceError(msg) from exc
 
     return collection
