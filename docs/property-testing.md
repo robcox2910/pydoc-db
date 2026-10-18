@@ -113,7 +113,7 @@ straight away if `find` never finds anything.
 | Rule | Test |
 |---|---|
 | Loading a saved collection gives back the same name, cards (types and all) and indexes | `test_save_then_load_gives_back_the_same_collection` |
-| Building an index on a field changes how fast `find` is, never which cards it finds | `test_an_index_never_changes_what_find_returns` |
+| Building an index on a field changes how fast `find` is, never its answer or its order | `test_an_index_never_changes_what_find_returns` |
 | Whatever bytes are in the file, loading gives a collection or a `PersistenceError`, never another error | `test_any_bytes_on_disk_load_or_raise_persistence_error` |
 | Whatever JSON is in the file, loading gives a collection or a `PersistenceError`, never another error | `test_any_json_on_disk_load_or_raise_persistence_error` |
 
@@ -187,7 +187,7 @@ Piece by piece:
   collection and to the list. The real file has rules to insert one card
   or a stack of them, look a card up by `_id`, search, search for a value
   a real card holds, update one or many, delete one or many, build and
-  drop indexes, and clear the folder.
+  drop indexes, scribble on found cards, and clear the folder.
 - **`ids = Bundle("ids")`** is a bag of barcodes used earlier in the
   story. Two random strings almost never match, so without it the story
   would hardly ever try filing a card under a barcode that's taken.
@@ -199,8 +199,7 @@ Piece by piece:
   checks what the collection *says*: `True` exactly when there was a card
   to shred.
 - **The `@invariant()`** runs after every single step and compares the
-  whole folder, card by card, in order, plus the list of indexes. (The
-  real one also checks `len`, `count()` and `find()`.)
+  whole folder, card by card, in order, plus the list of indexes.
 - **`TestCollectionModel = ...TestCase`** turns the machine into a test
   that pytest can find. One run plays 100 random stories, each up to 20
   steps long.
@@ -233,33 +232,37 @@ uv run pytest tests/test_properties.py tests/test_model.py --no-cov
 Hypothesis reports this (trimmed to the interesting part):
 
 ```
-    @given(cards=folders_of_cards(), field=field_names(), value=query_values())
+    @given(cards=folders_with_repeats(), field=field_names(), value=query_values())
     def test_an_index_never_changes_what_find_returns(
         cards: list[DocumentData], field: str, value: Any
     ) -> None:
-        """Building an index on a field changes how fast ``find`` is, never which cards it finds."""
+        """Building an index on a field changes how fast ``find`` is, never its answer or its order."""
         collection = folder_holding("cards", {str(n): card for n, card in enumerate(cards)})
-        without_index = collection.find({field: value})
+        # Search for a random value, and for every value a card really holds.
+        # ``$eq`` spells out "equals", so even a dict value is looked for, not read
+        # as operators (see docs/concepts/queries.md).
+        queries = [{field: {"$eq": wanted}} for wanted in [value, *(c.get(field) for c in cards)]]
+        without_index = [collection.find(query) for query in queries]
         collection.create_index(field)
-        with_index = collection.find({field: value})
-        # An index looks cards up by value, so it may hand them back in a
-        # different order; what matters is that they're the same cards.
->       assert sorted_by_id(with_index) == sorted_by_id(without_index)
-E       AssertionError: assert [] == [{'name': '', '_id': '0'}]
+        with_index = [collection.find(query) for query in queries]
+>       assert with_index == without_index
+E       AssertionError: assert [[], []] == [[], [{'name'... '_id': '0'}]]
+E         At index 1 diff: [] != [{'name': '', '_id': '0'}]
 E       Failing test case: test_an_index_never_changes_what_find_returns(
 E           cards=[{'name': ''}],
 E           field='name',
-E           value='',
+E           value=None,
 E       )
 ```
 
 Look at how small that is. One card, whose name is the empty string.
-Without an index, asking for `name == ''` finds it. Build an index on
-`name`, ask again, and the card has vanished.
+Searching for the random value, `None`, agreed either way. But
+searching for the name the card really holds, `''`, found it without an
+index and found nothing with one.
 
-`test_an_index_never_changes_what_find_returns` caught it, and so did the
-model check, which shrank its story to three steps: build an index on
-`name`, file a card named `''`, search for `''`. The other four
+`test_an_index_never_changes_what_find_returns` caught it. The model
+check happened to miss it this time: a model check is only as good as
+the stories it tries. The other four
 properties stayed green: without an index, `find` is still right. **The
 example tests all still pass. Only the property notices.** The example
 tests index cards with real-looking values like `"Paris"`, and nobody
@@ -274,7 +277,7 @@ pass.
 
 ## A Bug We Found
 
-Two, in fact. The model check failed on PyDocDB's real code:
+Four, in fact. First, the model check failed on PyDocDB's real code:
 
 ```
 TypeError: cannot use 'tuple' as a dict key (unhashable type: 'list')
@@ -291,9 +294,8 @@ Build an index on `name`, search for a list holding an empty list, and
 PyDocDB crashed. An index is a dict from values to barcodes, and dict
 keys must be *hashable* (unchangeable), which lists aren't. So
 `make_hashable` turned a list into a tuple -- but only the outside one.
-`[[]]` became `([],)`, a tuple with a list still inside it. Worse, when
-`insert_one` hit this, the card was already in the folder but missing
-from the index: half filed. The example tests only indexed text like
+`[[]]` became `([],)`, a tuple with a list still inside it. Worse,
+`insert_one` left the card half filed. The example tests only indexed text like
 `"Paris"`; the inspector's `any_values()` makes lists of lists all the
 time. The fix converts all the way down:
 
@@ -306,16 +308,26 @@ shrank a broken save file to one byte, `b'\x80'`, which isn't UTF-8 text,
 so `load_collection` crashed with `UnicodeDecodeError` instead of
 `PersistenceError`. The JSON property found a hand-edited file with two
 cards sharing a barcode, `{'documents': [{'_id': 1}, {'_id': 1}]}`, which
-escaped as `DuplicateKeyError`. A number with 5,000 digits (`ValueError`)
-and 100,000 `[`s (`RecursionError`) got out too. Now every one of them is
-a `PersistenceError` naming the file:
+escaped as `DuplicateKeyError`. Huge numbers and deep nesting got out too. Now
+each is a `PersistenceError` naming the file:
 
 ```python
     except (OSError, UnicodeDecodeError) as exc:  # was: except (OSError, json.JSONDecodeError) as exc:
 ```
 
+Third, an index changed the *order* of `find`'s answer: two cards named
+`''` came back as `'1'`, `'0'` instead of the order they were filed, and
+`find_one`'s "first" match changed from run to run. The collection now
+remembers each card's place in the filing order and sorts the index's
+answer by it.
+
+Fourth, cards were copied only one level deep. Add `"blue"` to the
+`tags` list of a card `find` gave you, and the filed card changed too.
+The model check's `scribble_on_found_cards` rule caught it. Cards are now
+copied all the way down (`copy.deepcopy`), coming in and going out.
+
 Each shrunk input is now also an ordinary example test, in
-`tests/test_indexing.py` and `tests/test_persistence.py`, so these bugs
+`tests/test_indexing.py`, `tests/test_collection.py` and `tests/test_persistence.py`, so these bugs
 can never sneak back in, even if someone deletes the properties.
 
 ## Run It Yourself
