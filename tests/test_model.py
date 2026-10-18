@@ -30,7 +30,7 @@ from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 
 from pydocdb.collection import Collection
-from pydocdb.document import DocumentData
+from pydocdb.document import Document, DocumentData
 from pydocdb.errors import DocumentNotFoundError, DuplicateKeyError
 from tests.strategies import (
     MOST_CARDS_PER_FOLDER,
@@ -182,6 +182,17 @@ class CollectionMachine(RuleBasedStateMachine):
         self.collection.create_index(field)
         if field not in self.indexed_fields:
             self.indexed_fields.append(field)
+
+    @rule(field=field_names(), value=query_values())
+    def scribble_on_a_created_index(self, field: str, value: Any) -> None:
+        """Build an index, wreck the one handed back, then search; the answer must not change."""
+        returned = self.collection.create_index(field)
+        if field not in self.indexed_fields:
+            self.indexed_fields.append(field)
+        returned.clear()
+        for card in self.model:
+            returned.remove(Document(copy.deepcopy(card)))
+        assert self.collection.find({field: value}) == self.matching(field, value)
 
     @rule(field=field_names())
     def drop_index(self, field: str) -> None:
