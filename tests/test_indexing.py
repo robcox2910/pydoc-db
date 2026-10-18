@@ -174,3 +174,37 @@ class TestIndexBackedFind:
         results = col.find({"city": "Paris", "age": {"$lt": 18}})
         assert len(results) == 1
         assert results[0]["name"] == "Alice"
+
+
+class TestIndexNestedValues:
+    """Lists inside lists, and lists inside dicts, can be indexed and searched.
+
+    Regression: found by a property test, which shrank it to the value ``[[]]``.
+    """
+
+    def test_create_index_on_list_of_lists(self) -> None:
+        """Verify an index can be built on a field holding a list of lists."""
+        col = Collection("test")
+        col.insert_one({"_id": "1", "name": [[]]})
+        col.create_index("name")
+        assert col.find({"name": [[]]}) == [{"_id": "1", "name": [[]]}]
+
+    def test_create_index_on_dict_holding_a_list(self) -> None:
+        """Verify an index can be built on a field holding a dict with a list inside."""
+        col = Collection("test")
+        col.insert_one({"_id": "1", "pet": {"": []}})
+        col.create_index("pet")
+        assert len(col.find({"pet": {"$eq": {"": []}}})) == 1
+
+    def test_search_indexed_field_for_list_of_lists(self) -> None:
+        """Verify searching an indexed field for a list of lists finds nothing, not a crash."""
+        col = Collection("test")
+        col.create_index("name")
+        assert col.find({"name": [[]]}) == []
+
+    def test_insert_into_indexed_collection_files_the_card_once(self) -> None:
+        """Verify a nested value is filed and indexed, never half-inserted."""
+        col = Collection("test")
+        col.create_index("name")
+        col.insert_one({"_id": "1", "name": [[1], {"a": [2]}]})
+        assert col.find({"name": [[1], {"a": [2]}]}) == [{"_id": "1", "name": [[1], {"a": [2]}]}]
