@@ -11,7 +11,7 @@ that maps each city to the documents that have it, so we can jump
 straight to the right ones.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from pydocdb.document import Document, extract_field
 
@@ -107,8 +107,9 @@ class Index:
 def make_hashable(value: Any) -> Any:
     """Convert a value to something that can be used as a dict key.
 
-    Lists and dicts aren't hashable in Python, so we convert them
-    to tuples and frozensets.
+    Lists and dicts aren't hashable in Python, so we convert them to tuples,
+    and do the same to everything inside them -- a list of lists becomes a
+    tuple of tuples, all the way down.
 
     Args:
         value: Any value to make hashable.
@@ -118,7 +119,8 @@ def make_hashable(value: Any) -> Any:
 
     """
     if isinstance(value, list):
-        return tuple(value)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
+        return tuple(make_hashable(item) for item in cast("list[Any]", value))
     if isinstance(value, dict):
-        return tuple(sorted(value.items()))  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
+        fields = cast("dict[str, Any]", value)
+        return tuple(sorted((key, make_hashable(item)) for key, item in fields.items()))
     return value

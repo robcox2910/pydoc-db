@@ -10,6 +10,7 @@ A Document is like one of those index cards. It holds key-value pairs
 just like how every library book gets a unique barcode.
 """
 
+import copy
 import uuid
 from typing import Any
 
@@ -64,8 +65,10 @@ class Document:
             **kwargs: Additional fields to include in the document.
 
         """
-        self.data: DocumentData = dict(data) if data else {}
-        self.data.update(kwargs)
+        # Copy all the way down, so changing a list inside the caller's dict
+        # later can't reach inside the filed card.
+        self.data: DocumentData = copy.deepcopy(data) if data else {}
+        self.data.update(copy.deepcopy(kwargs))
 
         if "_id" not in self.data:
             self.data["_id"] = str(uuid.uuid4())
@@ -118,13 +121,14 @@ class Document:
         """Return a copy of the document's data as a plain dictionary.
 
         Like photocopying an index card so you can scribble on the copy without
-        changing the original.
+        changing the original. The copy goes all the way down: lists and dicts
+        inside the card are copied too.
 
         Returns:
             A new dictionary with all the document's fields.
 
         """
-        return dict(self.data)
+        return copy.deepcopy(self.data)
 
     def __repr__(self) -> str:
         """Return a developer-friendly string representation."""

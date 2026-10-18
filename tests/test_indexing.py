@@ -174,3 +174,69 @@ class TestIndexBackedFind:
         results = col.find({"city": "Paris", "age": {"$lt": 18}})
         assert len(results) == 1
         assert results[0]["name"] == "Alice"
+
+
+class TestIndexNestedValues:
+    """Lists inside lists, and lists inside dicts, can be indexed and searched.
+
+    Regression: found by a property test, which shrank it to the value ``[[]]``.
+    """
+
+    def test_create_index_on_list_of_lists(self) -> None:
+        """Verify an index can be built on a field holding a list of lists."""
+        col = Collection("test")
+        col.insert_one({"_id": "1", "name": [[]]})
+        col.create_index("name")
+        assert col.find({"name": [[]]}) == [{"_id": "1", "name": [[]]}]
+
+    def test_create_index_on_dict_holding_a_list(self) -> None:
+        """Verify an index can be built on a field holding a dict with a list inside."""
+        col = Collection("test")
+        col.insert_one({"_id": "1", "pet": {"": []}})
+        col.create_index("pet")
+        assert len(col.find({"pet": {"$eq": {"": []}}})) == 1
+
+    def test_search_indexed_field_for_list_of_lists(self) -> None:
+        """Verify searching an indexed field for a list of lists finds nothing, not a crash."""
+        col = Collection("test")
+        col.create_index("name")
+        assert col.find({"name": [[]]}) == []
+
+    def test_insert_into_indexed_collection_files_the_card_once(self) -> None:
+        """Verify a nested value is filed and indexed, never half-inserted."""
+        col = Collection("test")
+        col.create_index("name")
+        col.insert_one({"_id": "1", "name": [[1], {"a": [2]}]})
+        assert col.find({"name": [[1], {"a": [2]}]}) == [{"_id": "1", "name": [[1], {"a": [2]}]}]
+
+
+# Enough cards that a hash-ordered set of barcodes is very unlikely to come
+# out in filing order by luck.
+MANY_CARDS = 20
+
+
+class TestIndexKeepsFilingOrder:
+    """An index speeds up find, but the cards still come back in filing order.
+
+    Regression: with an index, find used to return cards in hash order, and
+    find_one's "first" match depended on PYTHONHASHSEED.
+    """
+
+    def test_indexed_find_returns_cards_in_filing_order(self) -> None:
+        """Verify an index-backed find lists matches in the order they were filed."""
+        col = Collection("test")
+        ids = [f"card-{n}" for n in range(MANY_CARDS)]
+        for doc_id in ids:
+            col.insert_one({"_id": doc_id, "city": "Paris"})
+        col.create_index("city")
+        assert [doc["_id"] for doc in col.find({"city": "Paris"})] == ids
+
+    def test_indexed_find_one_returns_the_earliest_filed_match(self) -> None:
+        """Verify an index-backed find_one gives the first card filed, like a full scan."""
+        col = Collection("test")
+        for n in range(MANY_CARDS):
+            col.insert_one({"_id": f"card-{n}", "city": "Paris"})
+        col.create_index("city")
+        found = col.find_one({"city": "Paris"})
+        assert found is not None
+        assert found["_id"] == "card-0"

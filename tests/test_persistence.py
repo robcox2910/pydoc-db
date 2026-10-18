@@ -12,6 +12,10 @@ from pydocdb.persistence import load_collection, save_collection
 AGE_ALICE = 14
 AGE_BOB = 13
 EXPECTED_TWO = 2
+# Python refuses to read a whole number with more than 4,300 digits
+# (sys.get_int_max_str_digits()), and JSON nested this deep overflows its stack.
+TOO_MANY_DIGITS = 5000
+TOO_DEEP = 100_000
 
 
 class TestSaveAndLoad:
@@ -74,6 +78,42 @@ class TestSaveAndLoad:
         file_path = tmp_path / "bad.json"
         file_path.write_text("not valid json {{{", encoding="utf-8")
         with pytest.raises(PersistenceError, match="Failed to load"):
+            load_collection(file_path)
+
+    def test_load_file_that_is_not_text_raises(self, tmp_path: Path) -> None:
+        """Raise PersistenceError naming the file when it isn't UTF-8 text at all.
+
+        Regression: found by a property test, which shrank it to one byte.
+        """
+        file_path = tmp_path / "not_text.json"
+        file_path.write_bytes(b"\x80")
+        with pytest.raises(PersistenceError, match=r"not_text\.json"):
+            load_collection(file_path)
+
+    def test_load_number_too_long_for_python_raises(self, tmp_path: Path) -> None:
+        """Raise PersistenceError naming the file when a number has too many digits to read."""
+        file_path = tmp_path / "long_number.json"
+        file_path.write_text("1" * TOO_MANY_DIGITS, encoding="utf-8")
+        with pytest.raises(PersistenceError, match=r"long_number\.json"):
+            load_collection(file_path)
+
+    def test_load_json_nested_too_deep_raises(self, tmp_path: Path) -> None:
+        """Raise PersistenceError naming the file when lists are nested too deep to read."""
+        file_path = tmp_path / "too_deep.json"
+        file_path.write_text("[" * TOO_DEEP, encoding="utf-8")
+        with pytest.raises(PersistenceError, match=r"too_deep\.json"):
+            load_collection(file_path)
+
+    def test_load_two_cards_with_the_same_id_raises(self, tmp_path: Path) -> None:
+        """Raise PersistenceError naming the file when two saved cards share an ``_id``.
+
+        Regression: found by a property test, which shrank it to two cards with ``_id`` 1.
+        """
+        file_path = tmp_path / "clash.json"
+        file_path.write_text(
+            '{"name": "", "documents": [{"_id": 1}, {"_id": 1}]}', encoding="utf-8"
+        )
+        with pytest.raises(PersistenceError, match=r"clash\.json"):
             load_collection(file_path)
 
 

@@ -11,6 +11,7 @@ different fields! One student card might have a "nickname" field while
 another doesn't.
 """
 
+import copy
 from typing import Any
 
 from pydocdb.document import Document, DocumentData
@@ -41,6 +42,11 @@ class Collection:
         self.name: str = name
         self._documents: dict[str, Document] = {}
         self._indexes: dict[str, Index] = {}
+        # Each card's place in the filing order (0 for the first card filed,
+        # 1 for the next, ...). An index hands back barcodes in no particular
+        # order, so this puts its answers back in filing order.
+        self._filed_at: dict[str, int] = {}
+        self._cards_filed = 0
 
     def insert_one(self, data: DocumentData) -> Document:
         """Insert a single document into the collection.
@@ -52,7 +58,7 @@ class Collection:
             data: A dictionary of fields and values for the new document.
 
         Returns:
-            The inserted Document (with its ``_id``).
+            A copy of the inserted Document (with its ``_id``).
 
         Raises:
             DuplicateKeyError: If a document with the same _id already exists.
@@ -63,9 +69,9 @@ class Collection:
             msg = f"Document with _id '{doc.id}' already exists"
             raise DuplicateKeyError(msg)
 
-        self._documents[doc.id] = doc
-        self._index_document(doc)
-        return doc
+        self._file(doc)
+        # Hand back a photocopy, so scribbling on it can't change the filed card.
+        return Document(doc.data)
 
     def insert_many(self, data_list: list[DocumentData]) -> list[Document]:
         """Insert multiple documents at once.
@@ -79,7 +85,7 @@ class Collection:
             data_list: A list of dictionaries, each becoming a document.
 
         Returns:
-            A list of the inserted Documents.
+            Copies of the inserted Documents.
 
         Raises:
             DuplicateKeyError: If any document's _id already exists or is
@@ -96,9 +102,9 @@ class Collection:
             seen.add(doc.id)
 
         for doc in docs:
-            self._documents[doc.id] = doc
-            self._index_document(doc)
-        return docs
+            self._file(doc)
+        # Hand back photocopies, so scribbling on them can't change the filed cards.
+        return [Document(doc.data) for doc in docs]
 
     def find_one(
         self,
@@ -183,8 +189,11 @@ class Collection:
             # None isn't stored in the index, so let the full scan handle it.
             if value is None:
                 continue
+            found = [doc_id for doc_id in index.find(value) if doc_id in self._documents]
+            # The index only makes the search faster; it must never change the
+            # answer, so the cards come back in filing order, as a full scan gives them.
             return [
-                self._documents[doc_id] for doc_id in index.find(value) if doc_id in self._documents
+                self._documents[doc_id] for doc_id in sorted(found, key=self._filed_at.__getitem__)
             ]
         return list(self._documents.values())
 
@@ -260,7 +269,8 @@ class Collection:
         for doc in self._documents.values():
             if matches(doc, query):
                 self._unindex_document(doc)
-                doc.data.update(changes)
+                # Each card gets its own copy, so no two cards share a nested list.
+                doc.data.update(copy.deepcopy(changes))
                 self._index_document(doc)
                 count += 1
         return count
@@ -281,6 +291,7 @@ class Collection:
             if matches(doc, query):
                 self._unindex_document(doc)
                 del self._documents[doc.id]
+                del self._filed_at[doc.id]
                 return True
         return False
 
@@ -300,6 +311,7 @@ class Collection:
         for doc in to_delete:
             self._unindex_document(doc)
             del self._documents[doc.id]
+            del self._filed_at[doc.id]
         return len(to_delete)
 
     def count(self, query: dict[str, Any] | None = None) -> int:
@@ -385,8 +397,21 @@ class Collection:
         Like tipping every index card out of the folder into the recycling bin.
         """
         self._documents.clear()
+        self._filed_at.clear()
         for index in self._indexes.values():
             index.clear()
+
+    def _file(self, doc: Document) -> None:
+        """File a document at the back of the folder and add it to every index.
+
+        Args:
+            doc: The document to file.
+
+        """
+        self._documents[doc.id] = doc
+        self._filed_at[doc.id] = self._cards_filed
+        self._cards_filed += 1
+        self._index_document(doc)
 
     def _index_document(self, doc: Document) -> None:
         """Add a document to all indexes.
@@ -428,7 +453,8 @@ def _without_id(update: DocumentData) -> DocumentData:
         update: The requested update fields.
 
     Returns:
-        The same fields minus ``_id``.
+        A copy of the same fields minus ``_id``, copied all the way down.
 
     """
-    return {key: value for key, value in update.items() if key != "_id"}
+    # A deep copy, so changing a list in the update afterwards can't reach the card.
+    return copy.deepcopy({key: value for key, value in update.items() if key != "_id"})
