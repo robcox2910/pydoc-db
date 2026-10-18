@@ -11,6 +11,7 @@ different fields! One student card might have a "nickname" field while
 another doesn't.
 """
 
+import copy
 from typing import Any
 
 from pydocdb.document import Document, DocumentData
@@ -449,7 +450,8 @@ def _without_id(update: DocumentData) -> DocumentData:
         update: The requested update fields.
 
     Returns:
-        The same fields minus ``_id``.
+        A copy of the same fields minus ``_id``, copied all the way down.
 
     """
-    return {key: value for key, value in update.items() if key != "_id"}
+    # A deep copy, so changing a list in the update afterwards can't reach the card.
+    return copy.deepcopy({key: value for key, value in update.items() if key != "_id"})

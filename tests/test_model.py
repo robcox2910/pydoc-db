@@ -190,6 +190,17 @@ class CollectionMachine(RuleBasedStateMachine):
         assert self.collection.drop_index(field) == was_there
 
     @rule()
+    def scribble_on_found_cards(self) -> None:
+        """Scribble inside every card ``find`` hands back; the filed cards must not change."""
+        # Nothing changes in the list, so the invariant checks the folder is untouched.
+        for card in self.collection.find():
+            for value in card.values():
+                if isinstance(value, list):
+                    value.append("scribble")
+                elif isinstance(value, dict):
+                    value["scribble"] = True
+
+    @rule()
     def clear(self) -> None:
         """Empty both. The indexes stay, empty, ready for new cards."""
         self.collection.clear()

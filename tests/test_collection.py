@@ -299,3 +299,36 @@ class TestCollectionMisc:
         """Verify repr includes name and count."""
         col = Collection("students")
         assert "students" in repr(col)
+
+
+class TestCardsAreCopiedAllTheWayDown:
+    """Scribbling on a copy, even on a list inside it, never changes the filed card.
+
+    Regression: cards used to be copied only one level deep, so a list inside
+    a card was shared between the caller and the collection.
+    """
+
+    def test_changing_a_found_card_leaves_the_filed_card_alone(self) -> None:
+        """Verify changing a nested list in a find() result doesn't change the stored card."""
+        col = Collection("test")
+        col.insert_one({"_id": "1", "tags": ["red"]})
+        found = col.find()[0]
+        found["tags"].append("blue")
+        assert col.find_by_id("1") == {"_id": "1", "tags": ["red"]}
+
+    def test_changing_the_inserted_dict_leaves_the_filed_card_alone(self) -> None:
+        """Verify changing a nested list in the dict passed to insert_one doesn't change the card."""
+        col = Collection("test")
+        tags = ["red"]
+        col.insert_one({"_id": "1", "tags": tags})
+        tags.append("blue")
+        assert col.find_by_id("1") == {"_id": "1", "tags": ["red"]}
+
+    def test_changing_the_update_dict_leaves_the_filed_card_alone(self) -> None:
+        """Verify changing a nested list in an update payload after update_one doesn't change the card."""
+        col = Collection("test")
+        col.insert_one({"_id": "1"})
+        changes = {"tags": ["red"]}
+        col.update_one({"_id": "1"}, changes)
+        changes["tags"].append("blue")
+        assert col.find_by_id("1") == {"_id": "1", "tags": ["red"]}
