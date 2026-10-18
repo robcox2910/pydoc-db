@@ -18,7 +18,7 @@ from typing import Any, cast
 from pydocdb.atomic import atomic_write_text
 from pydocdb.collection import Collection
 from pydocdb.document import DocumentData
-from pydocdb.errors import PersistenceError
+from pydocdb.errors import DuplicateKeyError, PersistenceError
 
 
 def save_collection(collection: Collection, file_path: str | Path) -> None:
@@ -77,8 +77,18 @@ def load_collection(file_path: str | Path) -> Collection:
 
     try:
         text = path.read_text(encoding="utf-8")
+    # A file that isn't UTF-8 text (an image, a zip, a corrupted save) fails
+    # while decoding, not while reading, so it needs catching too.
+    except (OSError, UnicodeDecodeError) as exc:
+        msg = f"Failed to load collection from '{path}': {exc}"
+        raise PersistenceError(msg) from exc
+
+    try:
         data: Any = json.loads(text)
-    except (OSError, json.JSONDecodeError) as exc:
+    # JSONDecodeError is a kind of ValueError; a plain ValueError also means a
+    # number too long for Python to read, and RecursionError means lists or
+    # objects nested too deep. Each one is a file PyDocDB can't load.
+    except (ValueError, RecursionError) as exc:
         msg = f"Failed to load collection from '{path}': {exc}"
         raise PersistenceError(msg) from exc
 
@@ -106,7 +116,9 @@ def load_collection(file_path: str | Path) -> Collection:
             collection.insert_one(doc_data)
         for field in cast("list[object]", index_fields):
             collection.create_index(str(field))
-    except (KeyError, TypeError, ValueError) as exc:
+    # Two cards sharing an ``_id`` (DuplicateKeyError) can't come from a real
+    # save, so the file was edited or damaged: refuse it like any other.
+    except (DuplicateKeyError, KeyError, TypeError, ValueError) as exc:
         msg = f"'{path}' is not a valid saved collection: {exc}"
         raise PersistenceError(msg) from exc
 
