@@ -49,6 +49,7 @@ nav:
   - Persistence: concepts/persistence.md
   - Projection: concepts/projection.md
   - Query Language: concepts/queries.md
+  - Property Testing: property-testing.md
   # series-nav:start
   - The series:
       - Series home: https://robcox2910.github.io/
