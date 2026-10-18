@@ -101,6 +101,31 @@ class TestCollectionIndex:
         assert col.drop_index("name") is True
         assert "name" not in col.list_indexes()
 
+    def test_scribbling_on_the_returned_index_leaves_searches_unchanged(self) -> None:
+        """Verify clearing or editing what create_index returns doesn't touch the collection's index."""
+        col = Collection("test")
+        alice = col.insert_one({"name": "Alice"})
+        col.insert_one({"name": "Bob"})
+        returned = col.create_index("name")
+        returned.clear()
+        returned.remove(alice)
+        returned.add(Document({"name": "Zed", "_id": "ghost"}))
+        assert [d["name"] for d in col.find({"name": "Alice"})] == ["Alice"]
+        assert [d["name"] for d in col.find({"name": "Bob"})] == ["Bob"]
+        assert col.find({"name": "Zed"}) == []
+
+    def test_creating_an_existing_index_rebuilds_it(self) -> None:
+        """Verify a second create_index rebuilds from current cards and returns a fresh snapshot."""
+        col = Collection("test")
+        first = col.create_index("name")
+        col.insert_one({"name": "Alice"})
+        second = col.create_index("name")
+        assert second is not first
+        assert len(first) == 0
+        assert len(second) == 1
+        assert col.list_indexes() == ["name"]
+        assert [d["name"] for d in col.find({"name": "Alice"})] == ["Alice"]
+
     def test_drop_nonexistent_index(self) -> None:
         """Verify dropping a non-existent index returns False."""
         col = Collection("test")

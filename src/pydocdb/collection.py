@@ -336,18 +336,25 @@ class Collection:
         Like building an index at the back of a textbook so you can
         find topics quickly instead of reading every page.
 
+        Calling this on a field that already has an index rebuilds it from the
+        current cards and returns a fresh snapshot.
+
         Args:
             field: The field to index (supports dot notation).
 
         Returns:
-            The created Index object.
+            A snapshot of the new index, for looking at. It is a copy, like every
+            other card handed out, so changing it never changes the collection's
+            own index or its searches.
 
         """
         index = Index(field)
+        snapshot = Index(field)
         for doc in self._documents.values():
             index.add(doc)
+            snapshot.add(doc)
         self._indexes[field] = index
-        return index
+        return snapshot
 
     def drop_index(self, field: str) -> bool:
         """Remove an index on a field.

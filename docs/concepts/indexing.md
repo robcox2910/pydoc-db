@@ -23,6 +23,13 @@ students.insert_many([
 students.create_index("name")
 ```
 
+`create_index` also hands back a snapshot of the new index, so you can peek at
+it. Like every card the collection hands out, it is a copy: changing it never
+changes the collection's own index or what your searches find.
+
+Calling `create_index` on a field that already has an index rebuilds it from
+the current cards and returns a fresh snapshot.
+
 ## When to Use Indexes
 
 - Use indexes on fields you search by frequently

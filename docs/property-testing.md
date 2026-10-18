@@ -186,7 +186,8 @@ Piece by piece:
   collection and to the list. The real file has rules to insert one card
   or a stack of them, look a card up by `_id`, search, search for a value
   a real card holds, update one or many, delete one or many, build and
-  drop indexes, scribble on found cards, and clear the folder.
+  drop indexes, scribble on found cards and on the index `create_index`
+  hands back, and clear the folder.
 - **`ids = Bundle("ids")`** is a bag of barcodes used earlier in the
   story. Two random strings almost never match, so without it the story
   would hardly ever try filing a card under a barcode that's taken.
