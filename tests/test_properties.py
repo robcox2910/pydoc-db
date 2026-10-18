@@ -29,16 +29,19 @@ from pydocdb.errors import PersistenceError
 from pydocdb.persistence import load_collection, save_collection
 from tests.strategies import (
     MOST_CARDS_PER_FOLDER,
+    MOST_FIELDS_PER_CARD,
+    MOST_INDEXES,
     any_values,
     document_fields,
     document_ids,
     field_names,
-    plain_values,
+    query_values,
 )
 
 # --- Strategies: recipes for random inputs -----------------------------------
-# plain_values(), any_values(), field_names(), document_fields() and
-# document_ids() live in tests/strategies.py, shared with the model check.
+# The strategies the model check also uses (plain_values, any_values,
+# field_names, document_fields, document_ids and query_values) live in
+# tests/strategies.py.
 
 
 def collection_names() -> st.SearchStrategy[str]:
@@ -55,7 +58,7 @@ def any_cards() -> st.SearchStrategy[dict[str, DocumentData]]:
     """Make a folder's worth of cards: each ``_id`` (all different) with its fields."""
     return st.dictionaries(
         document_ids(),
-        st.dictionaries(any_field_names(), any_values()),
+        st.dictionaries(any_field_names(), any_values(), max_size=MOST_FIELDS_PER_CARD),
         max_size=MOST_CARDS_PER_FOLDER,
     )
 
@@ -72,13 +75,6 @@ def folders_with_repeats(draw: st.DrawFn) -> list[DocumentData]:
     # an index could hand them back in the wrong order.
     kinds = draw(st.lists(document_fields(), min_size=1, max_size=3))
     return draw(st.lists(st.sampled_from(kinds), max_size=MOST_CARDS_PER_FOLDER))
-
-
-def query_values() -> st.SearchStrategy[Any]:
-    """Make a value to look for: a plain value, or a list of any values."""
-    # Not a dict: in a query, a dict means "operators", like {"$gt": 13}
-    # (see docs/concepts/queries.md and pydocdb.query._match_field).
-    return st.one_of(plain_values(), st.lists(any_values()))
 
 
 def any_bytes() -> st.SearchStrategy[bytes]:
@@ -142,7 +138,11 @@ def load_or_refuse(path: Path) -> None:
 # --- Save and load: whatever you file away comes back ------------------------
 
 
-@given(name=collection_names(), cards=any_cards(), indexes=st.lists(any_field_names()))
+@given(
+    name=collection_names(),
+    cards=any_cards(),
+    indexes=st.lists(any_field_names(), max_size=MOST_INDEXES),
+)
 def test_save_then_load_gives_back_the_same_collection(
     name: str, cards: dict[str, DocumentData], indexes: list[str]
 ) -> None:

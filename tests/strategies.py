@@ -23,6 +23,14 @@ FIELD_NAMES = ("name", "age", "pet")
 # a crowd is rare, and a failure shrinks to one or two cards anyway.
 MOST_CARDS_PER_FOLDER = 5
 
+# A round-trip card has at most this many fields, any names at all. Inventing
+# nested values is most of the test's time, and three fields find the same bugs.
+MOST_FIELDS_PER_CARD = 3
+
+# The round-trip builds at most this many indexes. Each one walks every card,
+# and a bug in saving indexes shows up with one or two.
+MOST_INDEXES = 3
+
 
 def plain_values() -> st.SearchStrategy[Any]:
     """Make one simple JSON value: text, a whole number, a decimal, True/False or None."""
@@ -65,3 +73,10 @@ def document_fields() -> st.SearchStrategy[DocumentData]:
 def document_ids() -> st.SearchStrategy[str]:
     """Make an ``_id`` for a document: any text at all, even the empty string."""
     return st.text()
+
+
+def query_values() -> st.SearchStrategy[Any]:
+    """Make a value to look for: a plain value, or a list of any values."""
+    # Not a dict: in a query, a dict means "operators", like {"$gt": 13}
+    # (see docs/concepts/queries.md and pydocdb.query._match_field).
+    return st.one_of(plain_values(), st.lists(any_values()))

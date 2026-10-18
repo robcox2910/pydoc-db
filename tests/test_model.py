@@ -38,15 +38,8 @@ from tests.strategies import (
     document_fields,
     document_ids,
     field_names,
-    plain_values,
+    query_values,
 )
-
-
-def search_values() -> st.SearchStrategy[Any]:
-    """Make a value to search for: a plain value, or a list of any values."""
-    # Not a dict: in a query, a dict means "operators", like {"$gt": 13}
-    # (see docs/concepts/queries.md and pydocdb.query._match_field).
-    return st.one_of(plain_values(), st.lists(any_values()))
 
 
 def update_fields() -> st.SearchStrategy[DocumentData]:
@@ -132,7 +125,7 @@ class CollectionMachine(RuleBasedStateMachine):
             with pytest.raises(DocumentNotFoundError):
                 self.collection.find_by_id(doc_id)
 
-    @rule(field=field_names(), value=search_values())
+    @rule(field=field_names(), value=query_values())
     def find(self, field: str, value: Any) -> None:
         """Search on one field: the same cards, in the same order, as a plain loop over the list."""
         expected = self.matching(field, value)
@@ -152,7 +145,7 @@ class CollectionMachine(RuleBasedStateMachine):
         expected = self.matching(field, value)
         assert self.collection.find(query) == expected
 
-    @rule(field=field_names(), value=search_values(), changes=update_fields())
+    @rule(field=field_names(), value=query_values(), changes=update_fields())
     def update_one(self, field: str, value: Any, changes: DocumentData) -> None:
         """Change the first matching card in both; say True exactly when there was one."""
         expected = self.matching(field, value)
@@ -160,7 +153,7 @@ class CollectionMachine(RuleBasedStateMachine):
             expected[0].update(without_id(changes))
         assert self.collection.update_one({field: value}, changes) == bool(expected)
 
-    @rule(field=field_names(), value=search_values(), changes=update_fields())
+    @rule(field=field_names(), value=query_values(), changes=update_fields())
     def update_many(self, field: str, value: Any, changes: DocumentData) -> None:
         """Change every matching card in both, and say how many."""
         expected = self.matching(field, value)
@@ -168,7 +161,7 @@ class CollectionMachine(RuleBasedStateMachine):
             card.update(without_id(changes))
         assert self.collection.update_many({field: value}, changes) == len(expected)
 
-    @rule(field=field_names(), value=search_values())
+    @rule(field=field_names(), value=query_values())
     def delete_one(self, field: str, value: Any) -> None:
         """Shred the first matching card in both; say True exactly when there was one."""
         expected = self.matching(field, value)
@@ -176,7 +169,7 @@ class CollectionMachine(RuleBasedStateMachine):
             self.model.remove(expected[0])
         assert self.collection.delete_one({field: value}) == bool(expected)
 
-    @rule(field=field_names(), value=search_values())
+    @rule(field=field_names(), value=query_values())
     def delete_many(self, field: str, value: Any) -> None:
         """Shred every matching card in both, and say how many."""
         expected = self.matching(field, value)
