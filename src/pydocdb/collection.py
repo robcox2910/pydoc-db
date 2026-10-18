@@ -336,6 +336,9 @@ class Collection:
         Like building an index at the back of a textbook so you can
         find topics quickly instead of reading every page.
 
+        Calling this on a field that already has an index rebuilds it from the
+        current cards and returns a fresh snapshot.
+
         Args:
             field: The field to index (supports dot notation).
 
