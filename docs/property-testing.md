@@ -343,7 +343,7 @@ The `--no-cov` turns off the coverage check, which expects the *whole*
 test suite to run and would fail on two files.
 
 Run them the long way (2,000 random examples each, different every run)
-to hunt for rarer bugs. It takes about 3 to 4 minutes:
+to hunt for rarer bugs. It takes about 8 minutes:
 
 ```bash
 uv run pytest tests/test_properties.py tests/test_model.py --no-cov --hypothesis-profile=thorough
