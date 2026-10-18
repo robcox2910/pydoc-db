@@ -23,8 +23,7 @@ they ask for something, they check one rule:
 That rule is a **property**. It doesn't say what any one card looks like.
 It says something that must be true for *every* folder of cards.
 
-When the inspector catches the clerk out, they don't just report
-"something went wrong with that huge pile". They try again with fewer
+When the inspector catches the clerk out, they try again with fewer
 cards, shorter names and simpler values, checking it still goes wrong
 each time, until it's as small as it can be. That boiling-down is called
 **shrinking**, and it's the best part: the smallest failing input usually
@@ -81,8 +80,7 @@ Line by line:
   they'd almost never match. `any_values()` (in `tests/strategies.py`,
   shared with the model check) makes text, numbers, `True`/`False`,
   `None`, and lists and dicts up to two deep. A folder holds at most five
-  cards, which keeps the test quick; a failure shrinks to one or two
-  cards anyway.
+  cards, which keeps the test quick.
 - **The comment in `query_values()`** says why the value is never a dict:
   `{"age": {"$gt": 13}}` means "age greater than 13", not "age equals
   this dict". A strategy should only make inputs the code promises to
@@ -104,11 +102,12 @@ Notice what the test *doesn't* say. It never says "find Alice and you get
 Alice's card". It doesn't need to know any answers. It only needs a rule
 that's always true.
 
-The next property says an index must never change what `find` returns.
-**That property alone is passed by a `find` that does nothing** -- one
-that always hands back an empty list gives the same nothing with or
-without an index -- so the plain-filter property sits beside it and fails
-straight away if `find` never finds anything.
+The second property in the table below says an index must never change
+what `find` returns. **That index property alone is passed by a `find`
+that does nothing**: one that always hands back an empty list gives the
+same nothing with or without an index. The plain-filter property shown
+above catches it straight away, because a plain loop *does* find the
+matching cards.
 
 | Rule | Test |
 |---|---|
@@ -158,7 +157,7 @@ class CollectionMachine(RuleBasedStateMachine):
             self.model.append(copy.deepcopy(card))
         return doc_id
 
-    @rule(field=field_names(), value=search_values())
+    @rule(field=field_names(), value=query_values())
     def delete_one(self, field: str, value: Any) -> None:
         """Shred the first matching card in both; say True exactly when there was one."""
         expected = self.matching(field, value)
@@ -191,10 +190,8 @@ Piece by piece:
 - **`ids = Bundle("ids")`** is a bag of barcodes used earlier in the
   story. Two random strings almost never match, so without it the story
   would hardly ever try filing a card under a barcode that's taken.
-  `insert_one` puts its barcode in the bag (`target=ids`), and picks
-  either a barcode from the bag or a brand-new one, so it tries both
-  sides: a taken barcode must raise `DuplicateKeyError` and change
-  nothing.
+  `insert_one` puts its barcode in the bag (`target=ids`) and draws
+  from it too, so a taken barcode must raise `DuplicateKeyError`.
 - **`delete_one`** works out the answer from the notebook first, then
   checks what the collection *says*: `True` exactly when there was a card
   to shred.
@@ -260,9 +257,9 @@ Searching for the random value, `None`, agreed either way. But
 searching for the name the card really holds, `''`, found it without an
 index and found nothing with one.
 
-`test_an_index_never_changes_what_find_returns` caught it. The model
-check happened to miss it this time: a model check is only as good as
-the stories it tries. The other four
+`test_an_index_never_changes_what_find_returns` caught it, and so did the
+model check: build an index on `name`, file a card named `''`, search
+for `''`. The other four
 properties stayed green: without an index, `find` is still right. **The
 example tests all still pass. Only the property notices.** The example
 tests index cards with real-looking values like `"Paris"`, and nobody
@@ -307,28 +304,47 @@ The second was the loader. `test_any_bytes_on_disk_load_or_raise_persistence_err
 shrank a broken save file to one byte, `b'\x80'`, which isn't UTF-8 text,
 so `load_collection` crashed with `UnicodeDecodeError` instead of
 `PersistenceError`. The JSON property found a hand-edited file with two
-cards sharing a barcode, `{'documents': [{'_id': 1}, {'_id': 1}]}`, which
-escaped as `DuplicateKeyError`. Huge numbers and deep nesting got out too. Now
-each is a `PersistenceError` naming the file:
+cards sharing a barcode, `{'name': '', 'documents': [{'_id': 1}, {'_id': 1}]}`,
+which escaped as `DuplicateKeyError`. Huge numbers (`ValueError`) and deep
+nesting (`RecursionError`) got out too. The old code had one `try` around
+reading *and* parsing, catching only `(OSError, json.JSONDecodeError)`.
+Now decoding and parsing each get their own `try` (and `DuplicateKeyError`
+joins the `except` where the cards are filed):
 
 ```python
-    except (OSError, UnicodeDecodeError) as exc:  # was: except (OSError, json.JSONDecodeError) as exc:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        msg = f"Failed to load collection from '{path}': {exc}"
+        raise PersistenceError(msg) from exc
+
+    try:
+        data: Any = json.loads(text)
+    except (ValueError, RecursionError) as exc:
+        msg = f"Failed to load collection from '{path}': {exc}"
+        raise PersistenceError(msg) from exc
 ```
 
-Third, an index changed the *order* of `find`'s answer: two cards named
-`''` came back as `'1'`, `'0'` instead of the order they were filed, and
-`find_one`'s "first" match changed from run to run. The collection now
-remembers each card's place in the filing order and sorts the index's
-answer by it.
+The one byte became an ordinary example test in `tests/test_persistence.py`,
+so the bug can never sneak back, even if someone deletes the property:
 
-Fourth, cards were copied only one level deep. Add `"blue"` to the
-`tags` list of a card `find` gave you, and the filed card changed too.
-The model check's `scribble_on_found_cards` rule caught it. Cards are now
-copied all the way down (`copy.deepcopy`), coming in and going out.
+```python
+    def test_load_file_that_is_not_text_raises(self, tmp_path: Path) -> None:
+        """Raise PersistenceError naming the file when it isn't UTF-8 text at all.
 
-Each shrunk input is now also an ordinary example test, in
-`tests/test_indexing.py`, `tests/test_collection.py` and `tests/test_persistence.py`, so these bugs
-can never sneak back in, even if someone deletes the properties.
+        Regression: found by a property test, which shrank it to one byte.
+        """
+        file_path = tmp_path / "not_text.json"
+        file_path.write_bytes(b"\x80")
+        with pytest.raises(PersistenceError, match=r"not_text\.json"):
+            load_collection(file_path)
+```
+
+Third, an index changed the *order* of `find`'s answer (two cards named
+`''` came back `'1'`, `'0'`); see `TestIndexKeepsFilingOrder` in
+`tests/test_indexing.py`. Fourth, cards were copied only one level deep,
+so adding to a list inside a card you were handed changed the filed card;
+see `TestCardsAreCopiedAllTheWayDown` in `tests/test_collection.py`.
 
 ## Run It Yourself
 
