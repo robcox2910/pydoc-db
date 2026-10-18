@@ -41,6 +41,11 @@ class Collection:
         self.name: str = name
         self._documents: dict[str, Document] = {}
         self._indexes: dict[str, Index] = {}
+        # Each card's place in the filing order (0 for the first card filed,
+        # 1 for the next, ...). An index hands back barcodes in no particular
+        # order, so this puts its answers back in filing order.
+        self._filed_at: dict[str, int] = {}
+        self._cards_filed = 0
 
     def insert_one(self, data: DocumentData) -> Document:
         """Insert a single document into the collection.
@@ -63,8 +68,7 @@ class Collection:
             msg = f"Document with _id '{doc.id}' already exists"
             raise DuplicateKeyError(msg)
 
-        self._documents[doc.id] = doc
-        self._index_document(doc)
+        self._file(doc)
         return doc
 
     def insert_many(self, data_list: list[DocumentData]) -> list[Document]:
@@ -96,8 +100,7 @@ class Collection:
             seen.add(doc.id)
 
         for doc in docs:
-            self._documents[doc.id] = doc
-            self._index_document(doc)
+            self._file(doc)
         return docs
 
     def find_one(
@@ -183,8 +186,11 @@ class Collection:
             # None isn't stored in the index, so let the full scan handle it.
             if value is None:
                 continue
+            found = [doc_id for doc_id in index.find(value) if doc_id in self._documents]
+            # The index only makes the search faster; it must never change the
+            # answer, so the cards come back in filing order, as a full scan gives them.
             return [
-                self._documents[doc_id] for doc_id in index.find(value) if doc_id in self._documents
+                self._documents[doc_id] for doc_id in sorted(found, key=self._filed_at.__getitem__)
             ]
         return list(self._documents.values())
 
@@ -281,6 +287,7 @@ class Collection:
             if matches(doc, query):
                 self._unindex_document(doc)
                 del self._documents[doc.id]
+                del self._filed_at[doc.id]
                 return True
         return False
 
@@ -300,6 +307,7 @@ class Collection:
         for doc in to_delete:
             self._unindex_document(doc)
             del self._documents[doc.id]
+            del self._filed_at[doc.id]
         return len(to_delete)
 
     def count(self, query: dict[str, Any] | None = None) -> int:
@@ -385,8 +393,21 @@ class Collection:
         Like tipping every index card out of the folder into the recycling bin.
         """
         self._documents.clear()
+        self._filed_at.clear()
         for index in self._indexes.values():
             index.clear()
+
+    def _file(self, doc: Document) -> None:
+        """File a document at the back of the folder and add it to every index.
+
+        Args:
+            doc: The document to file.
+
+        """
+        self._documents[doc.id] = doc
+        self._filed_at[doc.id] = self._cards_filed
+        self._cards_filed += 1
+        self._index_document(doc)
 
     def _index_document(self, doc: Document) -> None:
         """Add a document to all indexes.

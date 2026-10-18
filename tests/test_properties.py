@@ -65,6 +65,15 @@ def folders_of_cards() -> st.SearchStrategy[list[DocumentData]]:
     return st.lists(document_fields(), max_size=MOST_CARDS_PER_FOLDER)
 
 
+@st.composite
+def folders_with_repeats(draw: st.DrawFn) -> list[DocumentData]:
+    """Make a short list of cards in which some cards are copies of others."""
+    # Copies mean one search often matches several cards, which is where
+    # an index could hand them back in the wrong order.
+    kinds = draw(st.lists(document_fields(), min_size=1, max_size=3))
+    return draw(st.lists(st.sampled_from(kinds), max_size=MOST_CARDS_PER_FOLDER))
+
+
 def query_values() -> st.SearchStrategy[Any]:
     """Make a value to look for: a plain value, or a list of any values."""
     # Not a dict: in a query, a dict means "operators", like {"$gt": 13}
@@ -118,11 +127,6 @@ def folder_holding(
     return collection
 
 
-def sorted_by_id(cards: list[DocumentData]) -> list[DocumentData]:
-    """Return the cards in order of their ``_id``, so two lists can be compared as sets."""
-    return sorted(cards, key=lambda card: str(card["_id"]))
-
-
 def load_or_refuse(path: Path) -> None:
     """Load the collection at ``path``, accepting only a PersistenceError refusal.
 
@@ -170,18 +174,20 @@ def test_find_gives_what_a_plain_filter_gives(
     assert collection.find({field: value}) == expected
 
 
-@given(cards=folders_of_cards(), field=field_names(), value=query_values())
+@given(cards=folders_with_repeats(), field=field_names(), value=query_values())
 def test_an_index_never_changes_what_find_returns(
     cards: list[DocumentData], field: str, value: Any
 ) -> None:
-    """Building an index on a field changes how fast ``find`` is, never which cards it finds."""
+    """Building an index on a field changes how fast ``find`` is, never its answer or its order."""
     collection = folder_holding("cards", {str(n): card for n, card in enumerate(cards)})
-    without_index = collection.find({field: value})
+    # Search for a random value, and for every value a card really holds.
+    # ``$eq`` spells out "equals", so even a dict value is looked for, not read
+    # as operators (see docs/concepts/queries.md).
+    queries = [{field: {"$eq": wanted}} for wanted in [value, *(c.get(field) for c in cards)]]
+    without_index = [collection.find(query) for query in queries]
     collection.create_index(field)
-    with_index = collection.find({field: value})
-    # An index looks cards up by value, so it may hand them back in a
-    # different order; what matters is that they're the same cards.
-    assert sorted_by_id(with_index) == sorted_by_id(without_index)
+    with_index = [collection.find(query) for query in queries]
+    assert with_index == without_index
 
 
 # --- Loading junk: a bad save file is refused, never a crash ------------------

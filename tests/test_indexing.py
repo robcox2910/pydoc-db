@@ -208,3 +208,35 @@ class TestIndexNestedValues:
         col.create_index("name")
         col.insert_one({"_id": "1", "name": [[1], {"a": [2]}]})
         assert col.find({"name": [[1], {"a": [2]}]}) == [{"_id": "1", "name": [[1], {"a": [2]}]}]
+
+
+# Enough cards that a hash-ordered set of barcodes is very unlikely to come
+# out in filing order by luck.
+MANY_CARDS = 20
+
+
+class TestIndexKeepsFilingOrder:
+    """An index speeds up find, but the cards still come back in filing order.
+
+    Regression: with an index, find used to return cards in hash order, and
+    find_one's "first" match depended on PYTHONHASHSEED.
+    """
+
+    def test_indexed_find_returns_cards_in_filing_order(self) -> None:
+        """Verify an index-backed find lists matches in the order they were filed."""
+        col = Collection("test")
+        ids = [f"card-{n}" for n in range(MANY_CARDS)]
+        for doc_id in ids:
+            col.insert_one({"_id": doc_id, "city": "Paris"})
+        col.create_index("city")
+        assert [doc["_id"] for doc in col.find({"city": "Paris"})] == ids
+
+    def test_indexed_find_one_returns_the_earliest_filed_match(self) -> None:
+        """Verify an index-backed find_one gives the first card filed, like a full scan."""
+        col = Collection("test")
+        for n in range(MANY_CARDS):
+            col.insert_one({"_id": f"card-{n}", "city": "Paris"})
+        col.create_index("city")
+        found = col.find_one({"city": "Paris"})
+        assert found is not None
+        assert found["_id"] == "card-0"

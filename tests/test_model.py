@@ -60,11 +60,6 @@ def without_id(changes: DocumentData) -> DocumentData:
     return copy.deepcopy({key: value for key, value in changes.items() if key != "_id"})
 
 
-def sorted_by_id(cards: list[DocumentData]) -> list[DocumentData]:
-    """Return the cards in order of their ``_id``, so two lists can be compared as sets."""
-    return sorted(cards, key=lambda card: card["_id"])
-
-
 # --- The machine: one story, played on the collection and on a list ----------
 
 
@@ -130,13 +125,11 @@ class CollectionMachine(RuleBasedStateMachine):
 
     @rule(field=field_names(), value=search_values())
     def find(self, field: str, value: Any) -> None:
-        """Search on one field: the same cards as a plain loop over the list."""
+        """Search on one field: the same cards, in the same order, as a plain loop over the list."""
         expected = self.matching(field, value)
-        # An index hands cards back by value, not in filing order, so compare as sets.
-        assert sorted_by_id(self.collection.find({field: value})) == sorted_by_id(expected)
+        assert self.collection.find({field: value}) == expected
         assert self.collection.count({field: value}) == len(expected)
-        found = self.collection.find_one({field: value})
-        assert found in expected if expected else found is None
+        assert self.collection.find_one({field: value}) == (expected[0] if expected else None)
 
     @rule(field=field_names(), which=st.integers(min_value=0))
     def find_a_value_some_card_has(self, field: str, which: int) -> None:
@@ -148,7 +141,7 @@ class CollectionMachine(RuleBasedStateMachine):
         # read as operators (see docs/concepts/queries.md).
         query = {field: {"$eq": value}}
         expected = self.matching(field, value)
-        assert sorted_by_id(self.collection.find(query)) == sorted_by_id(expected)
+        assert self.collection.find(query) == expected
 
     @rule(field=field_names(), value=search_values(), changes=update_fields())
     def update_one(self, field: str, value: Any, changes: DocumentData) -> None:
