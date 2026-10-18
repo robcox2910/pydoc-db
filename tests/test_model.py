@@ -54,6 +54,15 @@ def update_fields() -> st.SearchStrategy[DocumentData]:
     return st.dictionaries(st.one_of(field_names(), st.just("_id")), any_values())
 
 
+def scribble_inside(card: DocumentData) -> None:
+    """Add to every list and dict inside a card, the way careless code might."""
+    for value in card.values():
+        if isinstance(value, list):
+            value.append("scribble")
+        elif isinstance(value, dict):
+            value["scribble"] = True
+
+
 def without_id(changes: DocumentData) -> DocumentData:
     """Return a deep copy of the changes, minus ``_id``: an update never changes a barcode."""
     # Collection.update_one's docstring: "any ``_id`` in the update is ignored".
@@ -194,11 +203,17 @@ class CollectionMachine(RuleBasedStateMachine):
         """Scribble inside every card ``find`` hands back; the filed cards must not change."""
         # Nothing changes in the list, so the invariant checks the folder is untouched.
         for card in self.collection.find():
-            for value in card.values():
-                if isinstance(value, list):
-                    value.append("scribble")
-                elif isinstance(value, dict):
-                    value["scribble"] = True
+            scribble_inside(card)
+
+    @rule(doc_id=document_ids(), fields=document_fields())
+    def scribble_on_an_inserted_card(self, doc_id: str, fields: DocumentData) -> None:
+        """File a card, then scribble inside the Document handed back; the filed card must not change."""
+        if doc_id in self.ids_in_model():
+            return
+        card = {**fields, "_id": doc_id}
+        returned = self.collection.insert_one(card)
+        self.model.append(copy.deepcopy(card))
+        scribble_inside(returned.data)
 
     @rule()
     def clear(self) -> None:

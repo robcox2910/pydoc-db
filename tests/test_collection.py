@@ -332,3 +332,26 @@ class TestCardsAreCopiedAllTheWayDown:
         col.update_one({"_id": "1"}, changes)
         changes["tags"].append("blue")
         assert col.find_by_id("1") == {"_id": "1", "tags": ["red"]}
+
+    def test_changing_what_insert_one_returns_leaves_the_filed_card_alone(self) -> None:
+        """Verify changing a nested list in the Document insert_one returns doesn't change the card."""
+        col = Collection("test")
+        returned = col.insert_one({"_id": "1", "tags": ["red"]})
+        returned.data["tags"].append("blue")
+        assert col.find_by_id("1") == {"_id": "1", "tags": ["red"]}
+
+    def test_changing_what_insert_many_returns_leaves_the_filed_cards_alone(self) -> None:
+        """Verify changing a nested list in a Document insert_many returns doesn't change the card."""
+        col = Collection("test")
+        returned = col.insert_many([{"_id": "1", "tags": ["red"]}])
+        returned[0].data["tags"].append("blue")
+        assert col.find_by_id("1") == {"_id": "1", "tags": ["red"]}
+
+    def test_cards_changed_by_one_update_many_do_not_share_a_list(self) -> None:
+        """Verify each card update_many changes gets its own copy of a nested value."""
+        col = Collection("test")
+        col.insert_many([{"_id": "1", "team": "A"}, {"_id": "2", "team": "A"}])
+        col.update_many({"team": "A"}, {"tags": ["red"]})
+        # Reach the stored card the way a buggy caller could: through a returned Document.
+        col._documents["1"].data["tags"].append("blue")
+        assert col.find_by_id("2") == {"_id": "2", "team": "A", "tags": ["red"]}

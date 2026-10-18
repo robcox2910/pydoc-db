@@ -58,7 +58,7 @@ class Collection:
             data: A dictionary of fields and values for the new document.
 
         Returns:
-            The inserted Document (with its ``_id``).
+            A copy of the inserted Document (with its ``_id``).
 
         Raises:
             DuplicateKeyError: If a document with the same _id already exists.
@@ -70,7 +70,8 @@ class Collection:
             raise DuplicateKeyError(msg)
 
         self._file(doc)
-        return doc
+        # Hand back a photocopy, so scribbling on it can't change the filed card.
+        return Document(doc.data)
 
     def insert_many(self, data_list: list[DocumentData]) -> list[Document]:
         """Insert multiple documents at once.
@@ -84,7 +85,7 @@ class Collection:
             data_list: A list of dictionaries, each becoming a document.
 
         Returns:
-            A list of the inserted Documents.
+            Copies of the inserted Documents.
 
         Raises:
             DuplicateKeyError: If any document's _id already exists or is
@@ -102,7 +103,8 @@ class Collection:
 
         for doc in docs:
             self._file(doc)
-        return docs
+        # Hand back photocopies, so scribbling on them can't change the filed cards.
+        return [Document(doc.data) for doc in docs]
 
     def find_one(
         self,
@@ -267,7 +269,8 @@ class Collection:
         for doc in self._documents.values():
             if matches(doc, query):
                 self._unindex_document(doc)
-                doc.data.update(changes)
+                # Each card gets its own copy, so no two cards share a nested list.
+                doc.data.update(copy.deepcopy(changes))
                 self._index_document(doc)
                 count += 1
         return count
