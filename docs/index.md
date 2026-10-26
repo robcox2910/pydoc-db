@@ -27,6 +27,14 @@ PyDocDB is an **educational document store** -- a database that stores JSON-like
 7. **[Persistence](concepts/persistence.md)** -- Saving data to disk
 8. **[Aggregation](concepts/aggregation.md)** -- Grouping and summarizing data
 
+## Install
+
+```bash
+pip install fromscratch-pydocdb
+```
+
+Or get the whole series at once with `pip install fromscratch-pystack`. To read the code or run the tests, clone it from [GitHub](https://github.com/robcox2910/pydoc-db).
+
 ## Quick Start
 
 ```python
