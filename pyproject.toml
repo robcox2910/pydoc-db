@@ -1,5 +1,5 @@
 [project]
-name = "pydocdb"
+name = "fromscratch-pydocdb"
 dynamic = ["version"]
 description = "An educational document store library built from scratch in Python"
 readme = "README.md"
