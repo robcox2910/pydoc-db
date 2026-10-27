@@ -1,4 +1,8 @@
-# What is a Document Store?
+---
+title: "Build your own document database in Python"
+---
+
+# PyDocDB: Build your own document database in Python
 
 ## The Filing Cabinet Analogy
 
